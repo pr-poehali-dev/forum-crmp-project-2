@@ -1,8 +1,22 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Icon from "@/components/ui/icon";
+
+const AUTH_URL = "https://functions.poehali.dev/6bd4b7c1-d8cc-44eb-9522-1545746deb84";
 
 type Page = "home" | "categories" | "topics" | "profile" | "search" | "rules" | "moderation";
 type PostStatus = "pending" | "approved" | "rejected";
+type AuthView = "login" | "register";
+
+interface ForumUser {
+  id: number;
+  username: string;
+  display_name: string;
+  role: "admin" | "moderator" | "user" | "banned";
+  avatar_letter: string;
+  bio: string;
+  posts_count: number;
+  created_at: string;
+}
 
 interface Post {
   id: number;
@@ -66,6 +80,176 @@ const roleConfig: Record<User["role"], { label: string; cls: string }> = {
   banned: { label: "Заблокирован", cls: "gradient-badge-red" },
 };
 
+// ─── Auth Modal ───────────────────────────────────────────────────────────────
+function AuthModal({ onSuccess }: { onSuccess: (user: ForumUser, token: string) => void }) {
+  const [view, setView] = useState<AuthView>("login");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+
+  const [loginData, setLoginData] = useState({ login: "", password: "" });
+  const [regData, setRegData] = useState({ username: "", email: "", password: "", display_name: "" });
+
+  const handleLogin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError("");
+    setLoading(true);
+    try {
+      const res = await fetch(`${AUTH_URL}?action=login`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(loginData),
+      });
+      const data = await res.json();
+      if (!res.ok) { setError(data.error || "Ошибка входа"); return; }
+      localStorage.setItem("forum_token", data.token);
+      onSuccess(data.user, data.token);
+    } catch {
+      setError("Ошибка соединения");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleRegister = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError("");
+    setLoading(true);
+    try {
+      const res = await fetch(`${AUTH_URL}?action=register`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(regData),
+      });
+      const data = await res.json();
+      if (!res.ok) { setError(data.error || "Ошибка регистрации"); return; }
+      localStorage.setItem("forum_token", data.token);
+      onSuccess(data.user, data.token);
+    } catch {
+      setError("Ошибка соединения");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" />
+      <div className="relative glass-card rounded-2xl p-8 w-full max-w-md border border-[#00ff9d]/30 animate-fade-in">
+        <div className="flex items-center justify-center gap-3 mb-6">
+          <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-[#00ff9d]/30 to-[#a855f7]/30 border border-[#00ff9d]/40 flex items-center justify-center">
+            <span className="text-xl">⚡</span>
+          </div>
+          <span className="font-oswald text-2xl font-bold neon-text-green tracking-wider">DEVFORUM</span>
+        </div>
+
+        <div className="flex rounded-xl bg-muted/30 p-1 mb-6">
+          <button
+            onClick={() => { setView("login"); setError(""); }}
+            className={`flex-1 py-2 rounded-lg text-sm font-semibold transition-all ${view === "login" ? "bg-[#00ff9d]/20 text-[#00ff9d] border border-[#00ff9d]/30" : "text-muted-foreground"}`}
+          >
+            Вход
+          </button>
+          <button
+            onClick={() => { setView("register"); setError(""); }}
+            className={`flex-1 py-2 rounded-lg text-sm font-semibold transition-all ${view === "register" ? "bg-[#a855f7]/20 text-[#a855f7] border border-[#a855f7]/30" : "text-muted-foreground"}`}
+          >
+            Регистрация
+          </button>
+        </div>
+
+        {view === "login" ? (
+          <form onSubmit={handleLogin} className="space-y-3">
+            <div>
+              <label className="text-xs text-muted-foreground uppercase tracking-wider">Логин или email</label>
+              <input
+                className="w-full mt-1.5 bg-muted/30 border border-border rounded-xl px-4 py-2.5 text-sm text-foreground focus:outline-none focus:border-[#00ff9d]/50 transition-colors"
+                placeholder="username или email"
+                value={loginData.login}
+                onChange={e => setLoginData(p => ({ ...p, login: e.target.value }))}
+                required
+              />
+            </div>
+            <div>
+              <label className="text-xs text-muted-foreground uppercase tracking-wider">Пароль</label>
+              <input
+                type="password"
+                className="w-full mt-1.5 bg-muted/30 border border-border rounded-xl px-4 py-2.5 text-sm text-foreground focus:outline-none focus:border-[#00ff9d]/50 transition-colors"
+                placeholder="••••••••"
+                value={loginData.password}
+                onChange={e => setLoginData(p => ({ ...p, password: e.target.value }))}
+                required
+              />
+            </div>
+            {error && <p className="text-sm text-[#ff2d78] bg-[#ff2d78]/10 border border-[#ff2d78]/30 rounded-lg px-3 py-2">{error}</p>}
+            <button
+              type="submit"
+              disabled={loading}
+              className="w-full py-2.5 rounded-xl bg-[#00ff9d] text-[#0d0f1a] font-semibold text-sm hover:bg-[#00ff9d]/90 transition-all disabled:opacity-50 mt-2"
+            >
+              {loading ? "Входим..." : "Войти"}
+            </button>
+          </form>
+        ) : (
+          <form onSubmit={handleRegister} className="space-y-3">
+            <div>
+              <label className="text-xs text-muted-foreground uppercase tracking-wider">Имя пользователя</label>
+              <input
+                className="w-full mt-1.5 bg-muted/30 border border-border rounded-xl px-4 py-2.5 text-sm text-foreground focus:outline-none focus:border-[#a855f7]/50 transition-colors"
+                placeholder="username"
+                value={regData.username}
+                onChange={e => setRegData(p => ({ ...p, username: e.target.value }))}
+                required
+              />
+            </div>
+            <div>
+              <label className="text-xs text-muted-foreground uppercase tracking-wider">Отображаемое имя</label>
+              <input
+                className="w-full mt-1.5 bg-muted/30 border border-border rounded-xl px-4 py-2.5 text-sm text-foreground focus:outline-none focus:border-[#a855f7]/50 transition-colors"
+                placeholder="Иван Петров"
+                value={regData.display_name}
+                onChange={e => setRegData(p => ({ ...p, display_name: e.target.value }))}
+                required
+              />
+            </div>
+            <div>
+              <label className="text-xs text-muted-foreground uppercase tracking-wider">Email</label>
+              <input
+                type="email"
+                className="w-full mt-1.5 bg-muted/30 border border-border rounded-xl px-4 py-2.5 text-sm text-foreground focus:outline-none focus:border-[#a855f7]/50 transition-colors"
+                placeholder="email@example.com"
+                value={regData.email}
+                onChange={e => setRegData(p => ({ ...p, email: e.target.value }))}
+                required
+              />
+            </div>
+            <div>
+              <label className="text-xs text-muted-foreground uppercase tracking-wider">Пароль</label>
+              <input
+                type="password"
+                className="w-full mt-1.5 bg-muted/30 border border-border rounded-xl px-4 py-2.5 text-sm text-foreground focus:outline-none focus:border-[#a855f7]/50 transition-colors"
+                placeholder="Минимум 6 символов"
+                value={regData.password}
+                onChange={e => setRegData(p => ({ ...p, password: e.target.value }))}
+                required
+                minLength={6}
+              />
+            </div>
+            {error && <p className="text-sm text-[#ff2d78] bg-[#ff2d78]/10 border border-[#ff2d78]/30 rounded-lg px-3 py-2">{error}</p>}
+            <button
+              type="submit"
+              disabled={loading}
+              className="w-full py-2.5 rounded-xl bg-[#a855f7] text-white font-semibold text-sm hover:bg-[#a855f7]/90 transition-all disabled:opacity-50 mt-2"
+            >
+              {loading ? "Регистрируем..." : "Создать аккаунт"}
+            </button>
+          </form>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ─── Main ─────────────────────────────────────────────────────────────────────
 export default function Index() {
   const [page, setPage] = useState<Page>("home");
   const [search, setSearch] = useState("");
@@ -73,6 +257,74 @@ export default function Index() {
   const [users, setUsers] = useState<User[]>(USERS);
   const [selectedTopic, setSelectedTopic] = useState<Post | null>(null);
   const [modTab, setModTab] = useState<"posts" | "users">("posts");
+
+  // Auth
+  const [currentUser, setCurrentUser] = useState<ForumUser | null>(null);
+  const [showAuth, setShowAuth] = useState(false);
+  const [authLoading, setAuthLoading] = useState(true);
+  const [profileLoading, setProfileLoading] = useState(false);
+  const [profileSaved, setProfileSaved] = useState(false);
+  const [profileForm, setProfileForm] = useState({ display_name: "", bio: "" });
+
+  // Restore session on mount
+  useEffect(() => {
+    const token = localStorage.getItem("forum_token");
+    if (!token) { setAuthLoading(false); return; }
+    fetch(`${AUTH_URL}?action=me`, {
+      headers: { "X-Auth-Token": token },
+    })
+      .then(r => r.json())
+      .then(data => {
+        if (data.user) {
+          setCurrentUser(data.user);
+          setProfileForm({ display_name: data.user.display_name, bio: data.user.bio });
+        } else {
+          localStorage.removeItem("forum_token");
+        }
+      })
+      .catch(() => localStorage.removeItem("forum_token"))
+      .finally(() => setAuthLoading(false));
+  }, []);
+
+  const handleAuthSuccess = (user: ForumUser, _token: string) => {
+    setCurrentUser(user);
+    setProfileForm({ display_name: user.display_name, bio: user.bio });
+    setShowAuth(false);
+  };
+
+  const handleLogout = async () => {
+    const token = localStorage.getItem("forum_token");
+    if (token) {
+      await fetch(`${AUTH_URL}?action=logout`, {
+        method: "POST",
+        headers: { "X-Auth-Token": token },
+      }).catch(() => {});
+    }
+    localStorage.removeItem("forum_token");
+    setCurrentUser(null);
+    setPage("home");
+  };
+
+  const handleSaveProfile = async () => {
+    const token = localStorage.getItem("forum_token");
+    if (!token || !currentUser) return;
+    setProfileLoading(true);
+    try {
+      const res = await fetch(`${AUTH_URL}?action=update-profile`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "X-Auth-Token": token },
+        body: JSON.stringify(profileForm),
+      });
+      const data = await res.json();
+      if (data.user) {
+        setCurrentUser(data.user);
+        setProfileSaved(true);
+        setTimeout(() => setProfileSaved(false), 2000);
+      }
+    } finally {
+      setProfileLoading(false);
+    }
+  };
 
   const pendingCount = posts.filter(p => p.status === "pending").length;
 
@@ -101,12 +353,27 @@ export default function Index() {
       )
     : posts;
 
+  if (authLoading) {
+    return (
+      <div className="min-h-screen bg-background grid-bg flex items-center justify-center">
+        <div className="flex flex-col items-center gap-4">
+          <div className="w-12 h-12 rounded-lg bg-gradient-to-br from-[#00ff9d]/30 to-[#a855f7]/30 border border-[#00ff9d]/40 flex items-center justify-center animate-pulse">
+            <span className="text-2xl">⚡</span>
+          </div>
+          <p className="text-muted-foreground text-sm">Загрузка...</p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-background grid-bg">
+      {showAuth && <AuthModal onSuccess={handleAuthSuccess} />}
+
       {/* Header */}
       <header className="sticky top-0 z-50 glass-card border-b border-border/50">
         <div className="max-w-7xl mx-auto px-4 h-16 flex items-center justify-between">
-          <button onClick={() => setPage("home")} className="flex items-center gap-3 group">
+          <button onClick={() => setPage("home")} className="flex items-center gap-3">
             <div className="w-9 h-9 rounded-lg bg-gradient-to-br from-[#00ff9d]/30 to-[#a855f7]/30 border border-[#00ff9d]/40 flex items-center justify-center">
               <span className="text-lg">⚡</span>
             </div>
@@ -130,26 +397,42 @@ export default function Index() {
             ))}
           </nav>
 
-          <div className="flex items-center gap-3">
-            <button
-              onClick={() => setPage("moderation")}
-              className={`relative flex items-center gap-2 px-3 py-2 rounded-lg border text-sm font-medium transition-all ${
-                page === "moderation"
-                  ? "bg-[#a855f7]/25 border-[#a855f7]/50 text-[#a855f7]"
-                  : "bg-[#a855f7]/15 border-[#a855f7]/30 text-[#a855f7] hover:bg-[#a855f7]/25"
-              }`}
-            >
-              <Icon name="ShieldAlert" size={15} />
-              <span className="hidden sm:inline">Модерация</span>
-              {pendingCount > 0 && (
-                <span className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-[#ff2d78] text-white text-xs flex items-center justify-center font-bold">
-                  {pendingCount}
-                </span>
-              )}
-            </button>
-            <div className="w-9 h-9 rounded-full bg-gradient-to-br from-[#a855f7] to-[#00d4ff] flex items-center justify-center text-sm font-bold text-white">
-              Е
-            </div>
+          <div className="flex items-center gap-2">
+            {currentUser ? (
+              <>
+                <button
+                  onClick={() => setPage("moderation")}
+                  className={`relative flex items-center gap-2 px-3 py-2 rounded-lg border text-sm font-medium transition-all ${
+                    page === "moderation"
+                      ? "bg-[#a855f7]/25 border-[#a855f7]/50 text-[#a855f7]"
+                      : "bg-[#a855f7]/15 border-[#a855f7]/30 text-[#a855f7] hover:bg-[#a855f7]/25"
+                  }`}
+                >
+                  <Icon name="ShieldAlert" size={15} />
+                  <span className="hidden sm:inline">Модерация</span>
+                  {pendingCount > 0 && (
+                    <span className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-[#ff2d78] text-white text-xs flex items-center justify-center font-bold">
+                      {pendingCount}
+                    </span>
+                  )}
+                </button>
+                <button
+                  onClick={() => { setPage("profile"); setSelectedTopic(null); }}
+                  className="w-9 h-9 rounded-full bg-gradient-to-br from-[#a855f7] to-[#00d4ff] flex items-center justify-center text-sm font-bold text-white hover:opacity-90 transition-opacity"
+                  title={currentUser.display_name}
+                >
+                  {currentUser.avatar_letter}
+                </button>
+              </>
+            ) : (
+              <button
+                onClick={() => setShowAuth(true)}
+                className="flex items-center gap-2 px-4 py-2 rounded-xl bg-[#00ff9d] text-[#0d0f1a] font-semibold text-sm hover:bg-[#00ff9d]/90 transition-all"
+              >
+                <Icon name="LogIn" size={15} />
+                Войти
+              </button>
+            )}
           </div>
         </div>
       </header>
@@ -192,12 +475,21 @@ export default function Index() {
                   Сообщество разработчиков — обсуждай технологии, делись опытом, решай задачи вместе
                 </p>
                 <div className="flex flex-wrap gap-3">
-                  <button
-                    onClick={() => setPage("topics")}
-                    className="px-5 py-2.5 rounded-xl bg-[#00ff9d] text-[#0d0f1a] font-semibold text-sm hover:bg-[#00ff9d]/90 transition-all hover:shadow-[0_0_20px_rgba(0,255,157,0.4)] active:scale-95"
-                  >
-                    Создать тему
-                  </button>
+                  {currentUser ? (
+                    <button
+                      onClick={() => setPage("topics")}
+                      className="px-5 py-2.5 rounded-xl bg-[#00ff9d] text-[#0d0f1a] font-semibold text-sm hover:bg-[#00ff9d]/90 transition-all hover:shadow-[0_0_20px_rgba(0,255,157,0.4)] active:scale-95"
+                    >
+                      Создать тему
+                    </button>
+                  ) : (
+                    <button
+                      onClick={() => setShowAuth(true)}
+                      className="px-5 py-2.5 rounded-xl bg-[#00ff9d] text-[#0d0f1a] font-semibold text-sm hover:bg-[#00ff9d]/90 transition-all active:scale-95"
+                    >
+                      Присоединиться
+                    </button>
+                  )}
                   <button
                     onClick={() => setPage("categories")}
                     className="px-5 py-2.5 rounded-xl border border-[#a855f7]/40 text-[#a855f7] font-semibold text-sm hover:bg-[#a855f7]/10 transition-all"
@@ -294,11 +586,7 @@ export default function Index() {
                   key={cat.name}
                   onClick={() => setPage("topics")}
                   className="glass-card glass-card-hover rounded-xl p-5 text-left border"
-                  style={{
-                    animationDelay: `${i * 0.07}s`,
-                    borderColor: `${cat.borderColor}40`,
-                    boxShadow: `0 0 15px ${cat.borderColor}10`,
-                  }}
+                  style={{ animationDelay: `${i * 0.07}s`, borderColor: `${cat.borderColor}40` }}
                 >
                   <div className="text-3xl mb-3">{cat.icon}</div>
                   <h3 className="font-oswald text-xl font-bold text-white tracking-wide">{cat.name}</h3>
@@ -323,18 +611,24 @@ export default function Index() {
                 </h2>
                 <p className="text-muted-foreground text-sm">{posts.filter(p => p.status === "approved").length} активных обсуждений</p>
               </div>
-              <button className="px-4 py-2 rounded-xl bg-[#00ff9d] text-[#0d0f1a] font-semibold text-sm hover:bg-[#00ff9d]/90 transition-all flex items-center gap-2">
-                <Icon name="Plus" size={15} />
-                Новая тема
-              </button>
+              {currentUser ? (
+                <button className="px-4 py-2 rounded-xl bg-[#00ff9d] text-[#0d0f1a] font-semibold text-sm hover:bg-[#00ff9d]/90 transition-all flex items-center gap-2">
+                  <Icon name="Plus" size={15} />
+                  Новая тема
+                </button>
+              ) : (
+                <button
+                  onClick={() => setShowAuth(true)}
+                  className="px-4 py-2 rounded-xl border border-[#00ff9d]/40 text-[#00ff9d] font-semibold text-sm hover:bg-[#00ff9d]/10 transition-all flex items-center gap-2"
+                >
+                  <Icon name="LogIn" size={15} />
+                  Войти
+                </button>
+              )}
             </div>
             <div className="space-y-3">
               {posts.map((post, i) => (
-                <div
-                  key={post.id}
-                  className="glass-card rounded-xl p-4"
-                  style={{ animationDelay: `${i * 0.06}s` }}
-                >
+                <div key={post.id} className="glass-card rounded-xl p-4" style={{ animationDelay: `${i * 0.06}s` }}>
                   <div className="flex items-start gap-3">
                     <div className="w-10 h-10 rounded-full bg-gradient-to-br from-[#00ff9d]/40 to-[#a855f7]/40 flex items-center justify-center text-white font-bold text-sm flex-shrink-0">
                       {post.avatar}
@@ -404,16 +698,30 @@ export default function Index() {
             </div>
             <div className="glass-card rounded-xl p-5">
               <h3 className="font-oswald text-lg font-bold text-white mb-3">Написать ответ</h3>
-              <textarea
-                className="w-full bg-muted/30 border border-border rounded-xl p-3 text-sm text-foreground placeholder:text-muted-foreground resize-none focus:outline-none focus:border-[#00ff9d]/50 transition-colors"
-                rows={4}
-                placeholder="Поделитесь своим мнением..."
-              />
-              <div className="flex justify-end mt-3">
-                <button className="px-5 py-2 rounded-xl bg-[#00ff9d] text-[#0d0f1a] font-semibold text-sm hover:bg-[#00ff9d]/90 transition-all hover:shadow-[0_0_15px_rgba(0,255,157,0.3)]">
-                  Отправить ответ
-                </button>
-              </div>
+              {currentUser ? (
+                <>
+                  <textarea
+                    className="w-full bg-muted/30 border border-border rounded-xl p-3 text-sm text-foreground placeholder:text-muted-foreground resize-none focus:outline-none focus:border-[#00ff9d]/50 transition-colors"
+                    rows={4}
+                    placeholder="Поделитесь своим мнением..."
+                  />
+                  <div className="flex justify-end mt-3">
+                    <button className="px-5 py-2 rounded-xl bg-[#00ff9d] text-[#0d0f1a] font-semibold text-sm hover:bg-[#00ff9d]/90 transition-all">
+                      Отправить ответ
+                    </button>
+                  </div>
+                </>
+              ) : (
+                <div className="text-center py-6">
+                  <p className="text-muted-foreground text-sm mb-3">Войдите, чтобы оставить ответ</p>
+                  <button
+                    onClick={() => setShowAuth(true)}
+                    className="px-5 py-2 rounded-xl bg-[#00ff9d] text-[#0d0f1a] font-semibold text-sm hover:bg-[#00ff9d]/90 transition-all"
+                  >
+                    Войти / Зарегистрироваться
+                  </button>
+                </div>
+              )}
             </div>
           </div>
         )}
@@ -421,52 +729,86 @@ export default function Index() {
         {/* ===== PROFILE ===== */}
         {page === "profile" && (
           <div className="animate-fade-in max-w-2xl mx-auto">
-            <div className="glass-card rounded-2xl p-6 border border-[#a855f7]/30">
-              <div className="flex items-center gap-5 mb-6">
-                <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-[#a855f7] to-[#00d4ff] flex items-center justify-center text-3xl font-bold text-white">
-                  Е
-                </div>
-                <div>
-                  <h2 className="font-oswald text-2xl font-bold text-white">Елена Павлова</h2>
-                  <div className="flex items-center gap-2 mt-1">
-                    <span className="gradient-badge-purple text-xs px-2 py-0.5 rounded-full font-medium">Администратор</span>
+            {currentUser ? (
+              <div className="glass-card rounded-2xl p-6 border border-[#a855f7]/30">
+                <div className="flex items-center gap-5 mb-6">
+                  <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-[#a855f7] to-[#00d4ff] flex items-center justify-center text-3xl font-bold text-white">
+                    {currentUser.avatar_letter}
                   </div>
-                  <p className="text-sm text-muted-foreground mt-1.5">На форуме с января 2022</p>
+                  <div>
+                    <h2 className="font-oswald text-2xl font-bold text-white">{currentUser.display_name}</h2>
+                    <div className="flex items-center gap-2 mt-1">
+                      <span className="gradient-badge-purple text-xs px-2 py-0.5 rounded-full font-medium">
+                        {roleConfig[currentUser.role]?.label ?? currentUser.role}
+                      </span>
+                    </div>
+                    <p className="text-sm text-muted-foreground mt-1.5">@{currentUser.username}</p>
+                  </div>
+                </div>
+                <div className="grid grid-cols-3 gap-4 mb-6">
+                  {[
+                    { label: "Постов", value: String(currentUser.posts_count) },
+                    { label: "Ответов", value: "—" },
+                    { label: "Лайков", value: "—" },
+                  ].map(stat => (
+                    <div key={stat.label} className="bg-muted/30 rounded-xl p-3 text-center">
+                      <div className="font-oswald text-2xl font-bold neon-text-green">{stat.value}</div>
+                      <div className="text-xs text-muted-foreground mt-0.5">{stat.label}</div>
+                    </div>
+                  ))}
+                </div>
+                <div className="space-y-3">
+                  <div>
+                    <label className="text-xs text-muted-foreground uppercase tracking-wider">Отображаемое имя</label>
+                    <input
+                      className="w-full mt-1.5 bg-muted/30 border border-border rounded-xl px-4 py-2.5 text-sm text-foreground focus:outline-none focus:border-[#a855f7]/50 transition-colors"
+                      value={profileForm.display_name}
+                      onChange={e => setProfileForm(p => ({ ...p, display_name: e.target.value }))}
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs text-muted-foreground uppercase tracking-wider">О себе</label>
+                    <textarea
+                      className="w-full mt-1.5 bg-muted/30 border border-border rounded-xl px-4 py-2.5 text-sm text-foreground focus:outline-none focus:border-[#a855f7]/50 transition-colors resize-none"
+                      rows={3}
+                      value={profileForm.bio}
+                      onChange={e => setProfileForm(p => ({ ...p, bio: e.target.value }))}
+                      placeholder="Расскажи о себе..."
+                    />
+                  </div>
+                  <button
+                    onClick={handleSaveProfile}
+                    disabled={profileLoading}
+                    className={`w-full py-2.5 rounded-xl font-semibold text-sm transition-all disabled:opacity-50 ${
+                      profileSaved
+                        ? "bg-[#00ff9d] text-[#0d0f1a]"
+                        : "bg-[#a855f7] text-white hover:bg-[#a855f7]/90 hover:shadow-[0_0_15px_rgba(168,85,247,0.4)]"
+                    }`}
+                  >
+                    {profileSaved ? "✓ Сохранено!" : profileLoading ? "Сохраняем..." : "Сохранить изменения"}
+                  </button>
+                  <button
+                    onClick={handleLogout}
+                    className="w-full py-2.5 rounded-xl border border-[#ff2d78]/30 text-[#ff2d78] font-semibold text-sm hover:bg-[#ff2d78]/10 transition-all flex items-center justify-center gap-2"
+                  >
+                    <Icon name="LogOut" size={15} />
+                    Выйти
+                  </button>
                 </div>
               </div>
-              <div className="grid grid-cols-3 gap-4 mb-6">
-                {[
-                  { label: "Тем создано", value: "87" },
-                  { label: "Ответов", value: "937" },
-                  { label: "Лайков", value: "2 341" },
-                ].map(stat => (
-                  <div key={stat.label} className="bg-muted/30 rounded-xl p-3 text-center">
-                    <div className="font-oswald text-2xl font-bold neon-text-green">{stat.value}</div>
-                    <div className="text-xs text-muted-foreground mt-0.5">{stat.label}</div>
-                  </div>
-                ))}
-              </div>
-              <div className="space-y-3">
-                <div>
-                  <label className="text-xs text-muted-foreground uppercase tracking-wider">Отображаемое имя</label>
-                  <input
-                    className="w-full mt-1.5 bg-muted/30 border border-border rounded-xl px-4 py-2.5 text-sm text-foreground focus:outline-none focus:border-[#a855f7]/50 transition-colors"
-                    defaultValue="Елена Павлова"
-                  />
-                </div>
-                <div>
-                  <label className="text-xs text-muted-foreground uppercase tracking-wider">О себе</label>
-                  <textarea
-                    className="w-full mt-1.5 bg-muted/30 border border-border rounded-xl px-4 py-2.5 text-sm text-foreground focus:outline-none focus:border-[#a855f7]/50 transition-colors resize-none"
-                    rows={3}
-                    defaultValue="Senior Frontend Developer. Люблю React, TypeScript и кофе."
-                  />
-                </div>
-                <button className="w-full py-2.5 rounded-xl bg-[#a855f7] text-white font-semibold text-sm hover:bg-[#a855f7]/90 transition-all hover:shadow-[0_0_15px_rgba(168,85,247,0.4)]">
-                  Сохранить изменения
+            ) : (
+              <div className="glass-card rounded-2xl p-8 text-center border border-[#00ff9d]/20">
+                <Icon name="User" size={48} className="mx-auto mb-4 text-muted-foreground opacity-40" />
+                <h2 className="font-oswald text-2xl font-bold text-white mb-2">Войдите в аккаунт</h2>
+                <p className="text-muted-foreground mb-6">Чтобы просматривать и редактировать профиль</p>
+                <button
+                  onClick={() => setShowAuth(true)}
+                  className="px-6 py-2.5 rounded-xl bg-[#00ff9d] text-[#0d0f1a] font-semibold text-sm hover:bg-[#00ff9d]/90 transition-all"
+                >
+                  Войти / Зарегистрироваться
                 </button>
               </div>
-            </div>
+            )}
           </div>
         )}
 
@@ -496,7 +838,7 @@ export default function Index() {
             </div>
             {search ? (
               <div className="space-y-3">
-                <p className="text-sm text-muted-foreground">Найдено результатов: {filteredPosts.length}</p>
+                <p className="text-sm text-muted-foreground">Найдено: {filteredPosts.length}</p>
                 {filteredPosts.length === 0 ? (
                   <div className="text-center py-12 text-muted-foreground">
                     <Icon name="SearchX" size={40} className="mx-auto mb-3 opacity-30" />
@@ -548,11 +890,7 @@ export default function Index() {
                 { num: "04", title: "Система модерации", text: "Все новые посты проходят модерацию перед публикацией. Нарушения правил → предупреждение → бан. Решения модераторов обжалуются через поддержку.", icon: "ShieldCheck", color: "#ff2d78" },
                 { num: "05", title: "Авторские права", text: "Публикуй только контент, на который у тебя есть права. При использовании чужих материалов обязательно указывай источник.", icon: "Lock", color: "#ffa500" },
               ].map((rule, i) => (
-                <div
-                  key={rule.num}
-                  className="glass-card rounded-xl p-5 flex gap-4"
-                  style={{ animationDelay: `${i * 0.08}s` }}
-                >
+                <div key={rule.num} className="glass-card rounded-xl p-5 flex gap-4" style={{ animationDelay: `${i * 0.08}s` }}>
                   <div className="flex-shrink-0">
                     <div
                       className="w-10 h-10 rounded-lg flex items-center justify-center"

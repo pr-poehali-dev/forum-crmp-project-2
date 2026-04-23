@@ -1,0 +1,28 @@
+{
+  "tests": [
+    {
+      "name": "Register new user",
+      "method": "POST",
+      "path": "/?action=register",
+      "body": {"username": "testuser99", "email": "test99@example.com", "password": "secret123", "display_name": "Тест Юзер"},
+      "expectedStatus": 200,
+      "bodyMatcher": "none"
+    },
+    {
+      "name": "Login with credentials",
+      "method": "POST",
+      "path": "/?action=login",
+      "body": {"login": "testuser99", "password": "secret123"},
+      "expectedStatus": 200,
+      "bodyMatcher": "none"
+    },
+    {
+      "name": "Login wrong password",
+      "method": "POST",
+      "path": "/?action=login",
+      "body": {"login": "testuser99", "password": "wrongpass"},
+      "expectedStatus": 401,
+      "bodyMatcher": "none"
+    }
+  ]
+}
