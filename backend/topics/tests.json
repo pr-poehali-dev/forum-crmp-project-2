@@ -1,0 +1,11 @@
+{
+  "tests": [
+    {
+      "name": "Get topics list",
+      "method": "GET",
+      "path": "/?action=list",
+      "expectedStatus": 200,
+      "bodyMatcher": "none"
+    }
+  ]
+}
