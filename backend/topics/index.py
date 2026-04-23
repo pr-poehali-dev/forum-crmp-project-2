@@ -1,10 +1,13 @@
 """
-Управление темами форума и ответами: создание, получение, модерация.
+Управление темами форума и ответами: создание, получение, модерация, email-уведомления.
 """
 import json
 import os
+import smtplib
 import psycopg2
 from datetime import datetime
+from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
 
 SCHEMA = os.environ.get("MAIN_DB_SCHEMA", "t_p55563781_forum_crmp_project_2")
 CORS = {
@@ -16,6 +19,28 @@ CORS = {
 
 def get_conn():
     return psycopg2.connect(os.environ["DATABASE_URL"])
+
+
+def send_email(to: str, subject: str, html: str):
+    """Отправляет HTML-письмо через SMTP."""
+    smtp_host = os.environ.get("SMTP_HOST", "")
+    smtp_port = int(os.environ.get("SMTP_PORT", "587"))
+    smtp_user = os.environ.get("SMTP_USER", "")
+    smtp_pass = os.environ.get("SMTP_PASSWORD", "")
+
+    if not smtp_host or not smtp_user or not smtp_pass:
+        return
+
+    msg = MIMEMultipart("alternative")
+    msg["Subject"] = subject
+    msg["From"] = f"DevForum <{smtp_user}>"
+    msg["To"] = to
+    msg.attach(MIMEText(html, "html", "utf-8"))
+
+    with smtplib.SMTP(smtp_host, smtp_port, timeout=10) as server:
+        server.starttls()
+        server.login(smtp_user, smtp_pass)
+        server.sendmail(smtp_user, to, msg.as_string())
 
 
 def get_user_by_token(cur, token: str):
@@ -234,8 +259,69 @@ def handler(event: dict, context) -> dict:
             if new_status not in ("pending", "approved", "rejected"):
                 return {"statusCode": 400, "headers": CORS, "body": json.dumps({"error": "Неверный статус"})}
 
+            # Получаем данные темы и автора для письма
+            cur.execute(
+                f"""SELECT t.title, t.category, u.email, u.display_name
+                    FROM {SCHEMA}.topics t JOIN {SCHEMA}.users u ON u.id = t.user_id
+                    WHERE t.id = %s""",
+                (topic_id,)
+            )
+            topic_row = cur.fetchone()
+
             cur.execute(f"UPDATE {SCHEMA}.topics SET status = %s WHERE id = %s", (new_status, topic_id))
             conn.commit()
+
+            # Отправляем письмо автору при одобрении или отклонении
+            if topic_row and new_status in ("approved", "rejected"):
+                title, category, author_email, author_name = topic_row
+                if new_status == "approved":
+                    subject = f"✅ Ваша тема одобрена — DevForum"
+                    html = f"""
+                    <div style="font-family:sans-serif;max-width:520px;margin:0 auto;background:#0d0f1a;color:#e0e0e0;border-radius:16px;overflow:hidden;">
+                      <div style="background:linear-gradient(135deg,#00ff9d20,#a855f720);padding:32px 32px 24px;border-bottom:1px solid #00ff9d30;">
+                        <div style="font-size:28px;font-weight:700;color:#00ff9d;letter-spacing:2px;">⚡ DEVFORUM</div>
+                      </div>
+                      <div style="padding:32px;">
+                        <h2 style="margin:0 0 12px;color:#fff;font-size:20px;">Привет, {author_name}!</h2>
+                        <p style="color:#9ca3af;margin:0 0 20px;">Твоя тема прошла модерацию и теперь видна всем участникам форума.</p>
+                        <div style="background:#00ff9d15;border:1px solid #00ff9d30;border-radius:12px;padding:16px 20px;margin-bottom:24px;">
+                          <div style="font-size:12px;color:#00ff9d;text-transform:uppercase;letter-spacing:1px;margin-bottom:6px;">✅ Одобрена</div>
+                          <div style="color:#fff;font-size:16px;font-weight:600;">{title}</div>
+                          <div style="color:#6b7280;font-size:13px;margin-top:4px;">Категория: {category}</div>
+                        </div>
+                        <p style="color:#9ca3af;font-size:14px;">Участники уже могут читать и отвечать на твою тему. Следи за ответами в личном кабинете.</p>
+                      </div>
+                      <div style="padding:16px 32px;background:#ffffff08;text-align:center;">
+                        <p style="color:#4b5563;font-size:12px;margin:0;">DevForum — сообщество разработчиков</p>
+                      </div>
+                    </div>
+                    """
+                else:
+                    subject = f"❌ Тема не прошла модерацию — DevForum"
+                    html = f"""
+                    <div style="font-family:sans-serif;max-width:520px;margin:0 auto;background:#0d0f1a;color:#e0e0e0;border-radius:16px;overflow:hidden;">
+                      <div style="background:linear-gradient(135deg,#ff2d7820,#a855f720);padding:32px 32px 24px;border-bottom:1px solid #ff2d7830;">
+                        <div style="font-size:28px;font-weight:700;color:#ff2d78;letter-spacing:2px;">⚡ DEVFORUM</div>
+                      </div>
+                      <div style="padding:32px;">
+                        <h2 style="margin:0 0 12px;color:#fff;font-size:20px;">Привет, {author_name}!</h2>
+                        <p style="color:#9ca3af;margin:0 0 20px;">К сожалению, твоя тема не прошла модерацию и не будет опубликована.</p>
+                        <div style="background:#ff2d7815;border:1px solid #ff2d7830;border-radius:12px;padding:16px 20px;margin-bottom:24px;">
+                          <div style="font-size:12px;color:#ff2d78;text-transform:uppercase;letter-spacing:1px;margin-bottom:6px;">❌ Отклонена</div>
+                          <div style="color:#fff;font-size:16px;font-weight:600;">{title}</div>
+                        </div>
+                        <p style="color:#9ca3af;font-size:14px;">Проверь, соответствует ли тема правилам форума, и попробуй создать новую.</p>
+                      </div>
+                      <div style="padding:16px 32px;background:#ffffff08;text-align:center;">
+                        <p style="color:#4b5563;font-size:12px;margin:0;">DevForum — сообщество разработчиков</p>
+                      </div>
+                    </div>
+                    """
+                try:
+                    send_email(author_email, subject, html)
+                except Exception:
+                    pass  # Не ломаем API если письмо не дошло
+
             return {"statusCode": 200, "headers": CORS, "body": json.dumps({"ok": True})}
 
         return {"statusCode": 404, "headers": CORS, "body": json.dumps({"error": "Not found"})}
